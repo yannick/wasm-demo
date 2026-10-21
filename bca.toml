@@ -1,0 +1,12 @@
+# big-code-analysis (bca 2.1.0): per-function complexity gate for the Rust code.
+# `just metrics-check` runs it against .bca-baseline.toml; see metrics/README.md.
+paths = ["crates", "wasm/sheet-web/src"]
+exclude_tests = true
+cyclomatic_count_try = false
+
+[check]
+baseline = ".bca-baseline.toml"
+
+[thresholds]
+cyclomatic = 15
+cognitive = 20

@@ -1,0 +1,16 @@
+agent-demo
+Copyright © 2026 Yannick Koechlin
+
+Licensed under either of
+
+  * Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+  * MIT license (https://opensource.org/licenses/MIT)
+
+at your option (the `license` field of Cargo.toml: "MIT OR Apache-2.0").
+
+Third-party parts, under their own terms:
+
+  * GridCraft, the spreadsheet engine and UI compiled into web/public/sheet (a GridCraft
+    checkout next to this repo; path set in Cargo.toml); see that repository's license.
+  * Fira Sans Condensed (web/public/design/fonts), SIL Open Font License 1.1; see OFL.txt there.
+  * Rust crates and npm packages listed in Cargo.lock and web/pnpm-lock.yaml.

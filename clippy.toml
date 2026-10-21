@@ -1,0 +1,8 @@
+# Product names that are not code identifiers in doc comments
+doc-valid-idents = ["..", "ConnectRPC", "GridCraft", "DeepSeek", "OpenAI"]
+
+# Complexity limits. Clippy counts macro expansions (a `tracing::warn!` with
+# fields in a branch adds about 7), so 25 here is about 15 real.
+cognitive-complexity-threshold = 25
+excessive-nesting-threshold = 6
+too-many-arguments-threshold = 7

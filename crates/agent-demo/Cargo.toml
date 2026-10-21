@@ -1,0 +1,42 @@
+[package]
+name = "agent-demo"
+description = "Agentic features demo: runs agents and streams every step to a live web UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+agent-demo-proto.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+buffa = "0.9"
+connectrpc = { version = "0.9", features = ["axum"] }
+futures-util = "0.3"
+gridcraft-engine = { path = "../../../../rust/gridcraft/crates/engine" }
+gridcraft-mcp = { path = "../../../../rust/gridcraft/crates/mcp" }
+include_dir = "0.7"
+proa_core = "0.3.0"
+proa_macros = "0.3.0"
+proa_react = "0.3.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots", "http2"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.38.4"
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tokio-stream = { version = "0.1.17", features = ["sync"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+wasmi = "2.0.0"
+wat = "1.262.0"
+
+[dev-dependencies]
+connectrpc = { version = "0.9", features = ["client"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

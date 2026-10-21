@@ -1,0 +1,11 @@
+/target/
+node_modules/
+/web/dist/
+
+# Local secrets (e.g. API keys); never commit
+.env
+
+# Built by `just sheet-build` (wasm-bindgen output)
+/web/public/sheet/sheet-web*
+/.data/
+/.build-ctx/

@@ -1,0 +1,17 @@
+{
+  "git": {
+    "dirty": null,
+    "revision": null
+  },
+  "long_functions": {
+    "wasm/sheet-web/src/web.rs::download": 85
+  },
+  "schema": "agent-demo.metrics-baseline.v1",
+  "unsafe": {
+    "blocks": 1,
+    "fns": 0,
+    "impls": 0,
+    "traits": 0
+  },
+  "updated_at": "2026-10-21T20:51:29Z"
+}

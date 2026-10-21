@@ -1,0 +1,436 @@
+syntax = "proto3";
+
+package agentdemo.v1;
+
+// Runs agents and streams everything they do to the UI, live.
+//
+// A run is an append-only log of RunEvents. WatchRun replays the log from any sequence number and
+// then follows it live, so a client that reconnects (or a second browser tab) sees exactly what the
+// first one saw. All UI traffic is binary protobuf over the Connect protocol.
+service AgentService {
+  // The scenarios the demo agent can play (what the "new run" picker offers).
+  rpc ListScenarios(ListScenariosRequest) returns (ListScenariosResponse);
+
+  // Starts a run; its events are read with WatchRun.
+  rpc StartRun(StartRunRequest) returns (StartRunResponse);
+
+  // Every run's summary: first one per existing run, then every change, for every client.
+  rpc WatchRuns(WatchRunsRequest) returns (stream WatchRunsResponse);
+
+  // One run's events from `from_seq` on: the recorded ones first, then live until the run ends.
+  rpc WatchRun(WatchRunRequest) returns (stream WatchRunResponse);
+
+  // Answers a tool call that waits for approval (human in the loop).
+  rpc DecideToolCall(DecideToolCallRequest) returns (DecideToolCallResponse);
+
+  // Stops a run that has not ended; it ends with RUN_STATUS_CANCELLED.
+  rpc CancelRun(CancelRunRequest) returns (CancelRunResponse);
+
+  // The LLM settings (the API key is write-only: only whether one is set comes back).
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc SaveSettings(SaveSettingsRequest) returns (SaveSettingsResponse);
+}
+
+// The shared spreadsheet: an append-only log of GridCraft engine commands. Every client replays
+// it into its own GridCraft (WebAssembly) and the server into a headless engine, so the agent,
+// widgets and every browser see the same workbook.
+service SheetService {
+  // The log from `from_seq` on, then live.
+  rpc WatchSheet(WatchSheetRequest) returns (stream WatchSheetResponse);
+  // Commands a client ran locally (the user editing the sheet); the server applies and logs them.
+  rpc ApplySheetOps(ApplySheetOpsRequest) returns (ApplySheetOpsResponse);
+  // Clears the log and starts over with a blank workbook (clients reload it).
+  rpc ResetSheet(ResetSheetRequest) returns (ResetSheetResponse);
+}
+
+// Live readings of the machine the server runs on, and the WebAssembly widgets fed by them.
+service MachineService {
+  // A sample now and then one per second.
+  rpc WatchMetrics(WatchMetricsRequest) returns (stream WatchMetricsResponse);
+  // Every widget's state: all of them first, then each change.
+  rpc WatchWidgets(WatchWidgetsRequest) returns (stream WatchWidgetsResponse);
+  // Compiles a widget (WebAssembly text) and starts it; replaces one with the same name.
+  rpc CompileWidget(CompileWidgetRequest) returns (CompileWidgetResponse);
+  rpc StopWidget(StopWidgetRequest) returns (StopWidgetResponse);
+  // Starts a stopped or failed widget again from its source (a fresh instance: state resets).
+  rpc RestartWidget(RestartWidgetRequest) returns (RestartWidgetResponse);
+}
+
+message Scenario {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  // Prefilled prompt for the picker.
+  string prompt = 4;
+}
+
+message ListScenariosRequest {}
+
+message ListScenariosResponse {
+  repeated Scenario scenarios = 1;
+}
+
+message StartRunRequest {
+  string scenario_id = 1;
+  string prompt = 2;
+  // Turns with the same id share their history (the "chat" scenario); empty: a standalone run.
+  string conversation_id = 3;
+  // Overrides the configured model for this run (one of LlmSettings.models).
+  string model = 4;
+}
+
+message StartRunResponse {
+  string run_id = 1;
+}
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_RUNNING = 1;
+  // Waiting for a human to approve a tool call.
+  RUN_STATUS_AWAITING_APPROVAL = 2;
+  RUN_STATUS_SUCCEEDED = 3;
+  RUN_STATUS_FAILED = 4;
+  RUN_STATUS_CANCELLED = 5;
+}
+
+message RunSummary {
+  string run_id = 1;
+  string scenario_id = 2;
+  string prompt = 3;
+  RunStatus status = 4;
+  // Unix milliseconds.
+  int64 started_at_ms = 5;
+  int64 ended_at_ms = 6;
+  Usage usage = 7;
+  string conversation_id = 8;
+  // The model that answered ("" for scripted scenarios).
+  string model = 9;
+}
+
+message WatchRunsRequest {}
+
+message WatchRunsResponse {
+  RunSummary run = 1;
+}
+
+message WatchRunRequest {
+  string run_id = 1;
+  // First sequence number to send; 0 replays the whole run.
+  uint64 from_seq = 2;
+}
+
+message WatchRunResponse {
+  RunEvent event = 1;
+}
+
+message DecideToolCallRequest {
+  string run_id = 1;
+  string call_id = 2;
+  bool approved = 3;
+  // Optional note passed to the agent with a rejection.
+  string reason = 4;
+}
+
+message DecideToolCallResponse {}
+
+message CancelRunRequest {
+  string run_id = 1;
+}
+
+message CancelRunResponse {}
+
+// One entry of a run's log.
+message RunEvent {
+  // 0, 1, 2 … within the run, without gaps.
+  uint64 seq = 1;
+  // Unix milliseconds.
+  int64 at_ms = 2;
+  // The agent that produced it: empty for the top-level agent, else a sub-agent's id
+  // (see SubagentStarted), so the UI can nest its work.
+  string agent_id = 3;
+
+  oneof kind {
+    RunStarted run_started = 10;
+    // A new block of assistant output starts (text or thinking).
+    BlockStarted block_started = 11;
+    // More text for an open block; deltas concatenate.
+    BlockDelta block_delta = 12;
+    BlockFinished block_finished = 13;
+    PlanUpdated plan_updated = 14;
+    ToolCallStarted tool_call_started = 15;
+    ToolCallApprovalRequested tool_call_approval_requested = 16;
+    ToolCallDecided tool_call_decided = 17;
+    ToolCallFinished tool_call_finished = 18;
+    SubagentStarted subagent_started = 19;
+    SubagentFinished subagent_finished = 20;
+    UsageUpdated usage_updated = 21;
+    RunFinished run_finished = 22;
+  }
+}
+
+message RunStarted {
+  RunSummary run = 1;
+}
+
+enum BlockKind {
+  BLOCK_KIND_UNSPECIFIED = 0;
+  BLOCK_KIND_TEXT = 1;
+  BLOCK_KIND_THINKING = 2;
+}
+
+message BlockStarted {
+  string block_id = 1;
+  BlockKind kind = 2;
+}
+
+message BlockDelta {
+  string block_id = 1;
+  string text = 2;
+}
+
+message BlockFinished {
+  string block_id = 1;
+}
+
+enum StepStatus {
+  STEP_STATUS_UNSPECIFIED = 0;
+  STEP_STATUS_PENDING = 1;
+  STEP_STATUS_IN_PROGRESS = 2;
+  STEP_STATUS_DONE = 3;
+  STEP_STATUS_SKIPPED = 4;
+}
+
+message PlanStep {
+  string id = 1;
+  string title = 2;
+  StepStatus status = 3;
+}
+
+// The agent's whole plan as it stands now; replaces the previous one.
+message PlanUpdated {
+  repeated PlanStep steps = 1;
+}
+
+message ToolCallStarted {
+  string call_id = 1;
+  string tool = 2;
+  // The tool input as JSON.
+  string input_json = 3;
+}
+
+message ToolCallApprovalRequested {
+  string call_id = 1;
+  // Why the agent wants to do it, shown next to Approve / Reject.
+  string rationale = 2;
+}
+
+message ToolCallDecided {
+  string call_id = 1;
+  bool approved = 2;
+  string reason = 3;
+}
+
+message ToolCallFinished {
+  string call_id = 1;
+  // The tool output (JSON or text).
+  string output = 2;
+  bool is_error = 3;
+  uint32 duration_ms = 4;
+}
+
+message SubagentStarted {
+  string subagent_id = 1;
+  string name = 2;
+  string task = 3;
+}
+
+message SubagentFinished {
+  string subagent_id = 1;
+  string summary = 2;
+}
+
+message Usage {
+  uint32 input_tokens = 1;
+  uint32 output_tokens = 2;
+}
+
+// Running totals for the run.
+message UsageUpdated {
+  Usage usage = 1;
+}
+
+message RunFinished {
+  RunStatus status = 1;
+  string error = 2;
+}
+
+message LlmSettings {
+  // OpenAI-compatible API root, e.g. https://api.melious.ai (the client appends /v1/chat/completions).
+  string base_url = 1;
+  // The default model.
+  string model = 2;
+  // Models offered in the UI.
+  repeated string models = 3;
+  // Environment variable holding the API key (read when no key is stored).
+  string api_key_env = 4;
+  // Write-only: a non-empty value replaces the stored key; never sent back.
+  string api_key = 5;
+  // Read-only: whether a key is available (stored or from the environment).
+  bool api_key_set = 6;
+  double temperature = 7;
+  uint32 max_tokens = 8;
+  // Appended to the built-in system prompt.
+  string system_prompt = 9;
+  // Tool-calling rounds per turn before the agent must answer.
+  uint32 max_tool_rounds = 10;
+  // Clears the stored key (then the environment variable is used).
+  bool clear_api_key = 11;
+}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  LlmSettings settings = 1;
+}
+
+message SaveSettingsRequest {
+  LlmSettings settings = 1;
+}
+
+message SaveSettingsResponse {
+  LlmSettings settings = 1;
+}
+
+// One GridCraft engine command (see gridcraft's docs/control-protocol.md, `engine.execute`).
+message SheetOp {
+  uint64 seq = 1;
+  string command = 2;
+  // The command's params as JSON.
+  string params_json = 3;
+  // Who ran it: "agent", "widget:<name>", "client:<id>", "server".
+  string origin = 4;
+}
+
+message WatchSheetRequest {
+  // First seq to send; seqs may have gaps (compaction drops overwritten ops).
+  uint64 from_seq = 1;
+  // The log the client followed before (from a WatchSheetResponse); when it is not the current
+  // one (the server restarted or the sheet was reset) the stream starts with `reset`.
+  string log_id = 2;
+}
+
+message WatchSheetResponse {
+  // Ops in log order; a batch is one change (e.g. one tool call).
+  repeated SheetOp ops = 1;
+  // The log was reset: drop the workbook and replay from here (ops then start at seq 0).
+  bool reset = 2;
+  // Which log the ops belong to; send it back when resuming.
+  string log_id = 3;
+}
+
+message ApplySheetOpsRequest {
+  string client_id = 1;
+  repeated SheetOp ops = 2;
+}
+
+message ApplySheetOpsResponse {
+  // Ops the server's engine refused ("command: error"), which the log does not contain.
+  repeated string rejected = 1;
+}
+
+message ResetSheetRequest {}
+
+message ResetSheetResponse {}
+
+message CoreLoad {
+  float percent = 1;
+}
+
+message MachineMetrics {
+  int64 at_ms = 1;
+  string host = 2;
+  string os = 3;
+  float cpu_percent = 4;
+  repeated CoreLoad cores = 5;
+  uint64 memory_used_bytes = 6;
+  uint64 memory_total_bytes = 7;
+  uint64 swap_used_bytes = 8;
+  uint64 swap_total_bytes = 9;
+  double load_1 = 10;
+  double load_5 = 11;
+  double load_15 = 12;
+  uint64 uptime_s = 13;
+  uint32 process_count = 14;
+  uint64 disk_used_bytes = 15;
+  uint64 disk_total_bytes = 16;
+  // Bytes per second over the last sample interval, all interfaces.
+  uint64 net_rx_bytes_per_s = 17;
+  uint64 net_tx_bytes_per_s = 18;
+}
+
+message WatchMetricsRequest {}
+
+message WatchMetricsResponse {
+  MachineMetrics metrics = 1;
+}
+
+enum WidgetState {
+  WIDGET_STATE_UNSPECIFIED = 0;
+  WIDGET_STATE_RUNNING = 1;
+  WIDGET_STATE_STOPPED = 2;
+  // It trapped, ran out of fuel or failed to write; see `error`.
+  WIDGET_STATE_FAILED = 3;
+}
+
+message Widget {
+  string name = 1;
+  string description = 2;
+  // The WebAssembly text it was compiled from.
+  string wat = 3;
+  uint32 interval_ms = 4;
+  WidgetState state = 5;
+  uint64 ticks = 6;
+  string error = 7;
+  // Size of the compiled module.
+  uint32 wasm_bytes = 8;
+  // Cell writes over its lifetime (unchanged values are not written).
+  uint64 writes = 9;
+  int64 started_at_ms = 10;
+  // Lines it logged with `env.log`, most recent last.
+  repeated string log = 11;
+}
+
+message WatchWidgetsRequest {}
+
+message WatchWidgetsResponse {
+  Widget widget = 1;
+  // The widget was removed (only `widget.name` is set).
+  bool removed = 2;
+}
+
+message CompileWidgetRequest {
+  string name = 1;
+  string description = 2;
+  string wat = 3;
+  uint32 interval_ms = 4;
+}
+
+message CompileWidgetResponse {
+  Widget widget = 1;
+}
+
+message StopWidgetRequest {
+  string name = 1;
+  // Removes it instead of only stopping it.
+  bool remove = 2;
+}
+
+message StopWidgetResponse {}
+
+message RestartWidgetRequest {
+  string name = 1;
+}
+
+message RestartWidgetResponse {
+  Widget widget = 1;
+}
