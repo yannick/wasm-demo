@@ -13,6 +13,8 @@ import { isEnded } from "../agent/state.js";
 import { SettingsDialog } from "./SettingsDialog.js";
 import { useSettings } from "./settings.js";
 import { usePersistedFlag } from "./layout.js";
+import { useHistoryKeys } from "./history.js";
+import { HistoryMenu, usePromptHistory } from "./PromptHistory.js";
 
 const CONVERSATION_KEY = "agent-demo.conversation";
 
@@ -63,11 +65,16 @@ function Composer({ settings, busyRun, onSend }: { settings: LlmSettings | null;
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("");
   const [error, setError] = useState("");
+  const history = usePromptHistory();
+  const historyKeys = useHistoryKeys(history.prompts, prompt, setPrompt);
   const send = (scenario: string, text: string) => {
     if (busyRun || (scenario === "chat" && !text.trim())) return;
     setError("");
     onSend(scenario, text, model)
-      .then(() => setPrompt(""))
+      .then(() => {
+        setPrompt("");
+        history.refresh();
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   };
   return (
@@ -80,6 +87,7 @@ function Composer({ settings, busyRun, onSend }: { settings: LlmSettings | null;
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send("chat", prompt);
+          else historyKeys(e);
         }}
       />
       <div className="composer__bar">
@@ -96,6 +104,7 @@ function Composer({ settings, busyRun, onSend }: { settings: LlmSettings | null;
         {PRESETS.map((p) => (
           <Button key={p.label} size="sm" variant="ghost" disabled={busyRun !== undefined} onClick={() => send(p.scenario, p.prompt)}>{p.label}</Button>
         ))}
+        <HistoryMenu prompts={history.prompts} onPick={setPrompt} onOpen={history.refresh} />
       </div>
       {error && <p className="error">{error}</p>}
     </div>

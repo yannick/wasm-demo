@@ -96,6 +96,10 @@ pub fn spawn(agent: &dyn Agent, request: Request, run: RunHandle) {
             Err(e) => (pb::RunStatus::RUN_STATUS_FAILED, e.to_string()),
         };
         tracing::info!(run = %run.id(), ?status, %error, "run ended");
+        crate::activity::record(
+            "run_end",
+            serde_json::json!({ "run_id": run.id(), "status": format!("{status:?}"), "error": error }),
+        );
         run.finish(status, &error);
     });
 }

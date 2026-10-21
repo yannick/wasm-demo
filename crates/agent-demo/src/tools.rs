@@ -91,6 +91,7 @@ impl Tools {
             }
             "sheet_reset" => {
                 self.sheet.reset();
+                crate::activity::record("sheet_reset", json!({ "by": AGENT_ORIGIN }));
                 Output::ok(&json!({ "reset": true }))
             }
             other => match other.strip_prefix("sheet_") {

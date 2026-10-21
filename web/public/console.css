@@ -341,7 +341,27 @@ main.console-main {
   margin-top: var(--sd-space-2);
   font-size: var(--sd-font-size-xs);
 }
-.sheet-pane__footer > :last-child { margin-left: auto; }
+.sheet-pane__renderer { margin-left: auto; }
+/* The sheet crashed or stopped drawing (useSheet.ts): what happened and how to bring it back. */
+.sheet-crash {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sd-space-2) var(--sd-space-3);
+  margin-bottom: var(--sd-space-2);
+  padding: var(--sd-space-2) var(--sd-space-3);
+  border: var(--sd-border) solid var(--sd-color-warning);
+  font-size: var(--sd-font-size-sm);
+}
+.sheet-crash--down { border-color: var(--sd-color-critical); }
+.sheet-crash__detail {
+  flex-basis: 100%;
+  overflow: hidden;
+  font-size: var(--sd-font-size-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sheet-crash__actions { display: flex; flex-wrap: wrap; gap: var(--sd-space-2); }
 
 /* The undocked sheet window: the sheet fills it. */
 body.is-sheet-window header.hud { display: none; }
@@ -464,3 +484,44 @@ body.is-sheet-window main { padding: var(--sd-space-2); }
 .compiler { display: grid; gap: var(--sd-space-2); }
 .compiler .sd-input { width: 100%; box-sizing: border-box; }
 .compiler__wat { font: var(--sd-font-size-xs) / 1.4 var(--sd-font-mono); resize: vertical; }
+
+/* Prompt history (PromptHistory.tsx): a menu above the composer's preset row. */
+/* The list spans the composer (positioned against it), so it never leaves a narrow chat. */
+.composer { position: relative; }
+.history { margin-left: auto; }
+.history__list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--sd-space-1));
+  z-index: var(--sd-z-header);
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--sd-space-1);
+  list-style: none;
+  border: var(--sd-border) solid var(--sd-color-line);
+  background: var(--sd-color-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+.history__empty { padding: var(--sd-space-2); }
+.history__item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: var(--sd-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--sd-color-text);
+  font: inherit;
+  font-size: var(--sd-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.history__item:hover,
+.history__item:focus-visible { background: var(--sd-color-accent-faint); outline: none; }
+.history__text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.history__meta { font-size: var(--sd-font-size-xs); color: var(--sd-color-text-muted); }
+.settings__section--wide { grid-column: 1 / -1; }
+.settings__briefing { font-family: var(--sd-font-mono); font-size: var(--sd-font-size-xs); line-height: 1.45; }
+.settings__row--end { display: flex; justify-content: flex-end; }

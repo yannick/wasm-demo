@@ -8,9 +8,11 @@ use connectrpc::{
     ConnectError, RequestContext, Response, ServiceRequest, ServiceResult, ServiceStream,
 };
 use futures_util::{StreamExt as _, stream};
+use serde_json::json;
 use tokio::sync::broadcast::error::RecvError;
 use tokio_stream::wrappers::WatchStream;
 
+use crate::activity;
 use crate::agent::{self, Agent};
 use crate::machine::Machine;
 use crate::run::{DecideError, Decision, Runs};
@@ -95,6 +97,16 @@ impl AgentService for AgentApi {
         );
         let run_id = run.id();
         tracing::info!(run = %run_id, scenario, model = %start.model, "run started");
+        activity::record(
+            "prompt",
+            json!({
+                "prompt": activity::cut(&start.prompt),
+                "model": start.model,
+                "scenario_id": scenario,
+                "conversation_id": start.conversation_id,
+                "run_id": run_id,
+            }),
+        );
         agent::spawn(self.agent.as_ref(), start, run);
         Response::ok(pb::StartRunResponse {
             run_id,
@@ -213,10 +225,76 @@ impl AgentService for AgentApi {
             SettingsError::Write { .. } => ConnectError::internal(e.to_string()),
         })?;
         tracing::info!(model = %saved.model, base_url = %saved.base_url, "settings saved");
+        activity::record(
+            "settings",
+            json!({
+                "model": saved.model,
+                "base_url": saved.base_url,
+                "temperature": saved.temperature,
+                "max_tokens": saved.max_tokens,
+                "max_tool_rounds": saved.max_tool_rounds,
+                "custom_briefing": !saved.briefing.is_empty(),
+                "extra_instructions": !saved.system_prompt.trim().is_empty(),
+            }),
+        );
         Response::ok(pb::SaveSettingsResponse {
             settings: saved.to_proto().into(),
             ..Default::default()
         })
+    }
+
+    #[allow(clippy::unused_async_trait_impl)] // the trait method is async
+    async fn list_prompts(
+        &self,
+        _ctx: RequestContext,
+        request: ServiceRequest<'_, pb::ListPromptsRequest>,
+    ) -> ServiceResult<pb::ListPromptsResponse> {
+        let limit = match request.limit {
+            0 => 50,
+            n => n.min(500),
+        };
+        let prompts = activity::prompts(limit as usize)
+            .into_iter()
+            .map(|p| pb::PromptEntry {
+                prompt: p.text,
+                at_ms: p.at_ms,
+                model: p.model,
+                scenario_id: p.scenario_id,
+                run_id: p.run_id,
+                ..Default::default()
+            })
+            .collect();
+        Response::ok(pb::ListPromptsResponse {
+            prompts,
+            ..Default::default()
+        })
+    }
+
+    #[allow(clippy::unused_async_trait_impl)] // the trait method is async
+    async fn report_client_event(
+        &self,
+        _ctx: RequestContext,
+        request: ServiceRequest<'_, pb::ReportClientEventRequest>,
+    ) -> ServiceResult<pb::ReportClientEventResponse> {
+        const MAX_KIND: usize = 64;
+        let kind = request.kind.trim();
+        if kind.is_empty() || kind.len() > MAX_KIND {
+            return Err(ConnectError::invalid_argument(format!(
+                "kind must be 1-{MAX_KIND} characters"
+            )));
+        }
+        // Clients send what they like: keep it small, and JSON only if it parses.
+        let raw = request.detail_json;
+        let detail = match serde_json::from_str::<serde_json::Value>(raw) {
+            Ok(v) if raw.len() <= activity::MAX_FIELD => v,
+            _ => json!(activity::cut(raw)),
+        };
+        tracing::warn!(event = kind, message = request.message, "client event");
+        activity::record(
+            "client",
+            json!({ "event": kind, "message": activity::cut(request.message), "detail": detail }),
+        );
+        Response::ok(pb::ReportClientEventResponse::default())
     }
 }
 
@@ -250,11 +328,17 @@ impl SheetService for SheetApi {
             return Err(ConnectError::invalid_argument("client_id is required"));
         }
         let sheet = Arc::clone(&self.sheet);
+        let commands: Vec<String> = request.ops.iter().map(|op| op.command.clone()).collect();
+        let client = request.client_id.clone();
         let rejected = tokio::task::spawn_blocking(move || {
             sheet.apply_client(&request.client_id, &request.ops)
         })
         .await
         .map_err(|e| ConnectError::internal(e.to_string()))?;
+        activity::record(
+            "sheet_client_ops",
+            json!({ "client": client, "commands": commands, "rejected": rejected }),
+        );
         Response::ok(pb::ApplySheetOpsResponse {
             rejected,
             ..Default::default()
@@ -268,6 +352,7 @@ impl SheetService for SheetApi {
         _request: ServiceRequest<'_, pb::ResetSheetRequest>,
     ) -> ServiceResult<pb::ResetSheetResponse> {
         self.sheet.reset();
+        activity::record("sheet_reset", json!({ "by": "user" }));
         Response::ok(pb::ResetSheetResponse::default())
     }
 }

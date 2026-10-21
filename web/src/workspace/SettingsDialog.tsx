@@ -1,4 +1,5 @@
-// LLM settings: endpoint, models, key (write-only), sampling and the agent's limits.
+// LLM settings: endpoint, models, key (write-only), sampling, the agent's limits and its
+// briefing (the start of every system prompt: the setup, the tools, GridCraft's catalog).
 import { useState } from "react";
 
 import { Button, Dialog } from "../design/index.js";
@@ -16,6 +17,8 @@ interface Draft {
   maxTokens: string;
   maxToolRounds: string;
   systemPrompt: string;
+  briefing: string;
+  defaultBriefing: string;
 }
 
 function draftOf(s: LlmSettings): Draft {
@@ -30,6 +33,8 @@ function draftOf(s: LlmSettings): Draft {
     maxTokens: String(s.maxTokens),
     maxToolRounds: String(s.maxToolRounds),
     systemPrompt: s.systemPrompt,
+    briefing: s.briefing,
+    defaultBriefing: s.defaultBriefing,
   };
 }
 
@@ -43,9 +48,9 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, wide, children }: { title: string; wide?: boolean; children: React.ReactNode }) {
   return (
-    <fieldset className="settings__section">
+    <fieldset className={wide ? "settings__section settings__section--wide" : "settings__section"}>
       <legend className="sd-label">{title}</legend>
       {children}
     </fieldset>
@@ -89,12 +94,36 @@ function Fields({ draft, set, keySet }: { draft: Draft; set(patch: Partial<Draft
           <Field label="Tool rounds"><input className="sd-input" type="number" min={1} max={64} value={draft.maxToolRounds} onChange={text("maxToolRounds")} /></Field>
         </div>
       </Section>
-      <Section title="System prompt">
-        <Field label="Extra instructions" hint="Appended to the built-in prompt, for new chats.">
-          <textarea className="sd-input" rows={5} value={draft.systemPrompt} onChange={text("systemPrompt")} />
-        </Field>
-      </Section>
+      <Briefing draft={draft} set={set} />
     </div>
+  );
+}
+
+/** A rough size: about four characters per token. */
+function size(text: string): string {
+  return `${(text.length / 1024).toFixed(1)} KB · ~${Math.round(text.length / 4 / 100) / 10}k tokens`;
+}
+
+function Briefing({ draft, set }: { draft: Draft; set(patch: Partial<Draft>): void }) {
+  const builtIn = draft.briefing.trim() === draft.defaultBriefing.trim();
+  return (
+    <Section title="Agent briefing" wide>
+      <Field
+        label={builtIn ? "Briefing (built-in)" : "Briefing (customized)"}
+        hint={`The start of every system prompt: how the setup works, every tool, and GridCraft's commands, charts and functions (generated from the engine). ${size(draft.briefing)}, sent with every request.`}
+      >
+        <textarea className="sd-input settings__briefing" rows={16} spellCheck={false} value={draft.briefing} onChange={(e) => set({ briefing: e.target.value })} />
+      </Field>
+      <div className="settings__row settings__row--end">
+        <Button size="sm" variant="ghost" disabled={builtIn} onClick={() => set({ briefing: draft.defaultBriefing })}>
+          Reset to built-in
+        </Button>
+      </div>
+      <Field label="Extra instructions" hint="Appended after the briefing.">
+        <textarea className="sd-input" rows={3} value={draft.systemPrompt} onChange={(e) => set({ systemPrompt: e.target.value })} />
+      </Field>
+      <p className="field__hint">Applies from the next message on, in the current chat too.</p>
+    </Section>
   );
 }
 
@@ -116,6 +145,8 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: LlmSe
       maxTokens: Number(draft.maxTokens),
       maxToolRounds: Number(draft.maxToolRounds),
       systemPrompt: draft.systemPrompt,
+      // Empty or unchanged means the built-in one (the server stores it as "none").
+      briefing: draft.briefing.trim() ? draft.briefing : draft.defaultBriefing,
     };
     agentClient
       .saveSettings({ settings: update })

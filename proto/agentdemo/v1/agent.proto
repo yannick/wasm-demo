@@ -29,6 +29,13 @@ service AgentService {
   // The LLM settings (the API key is write-only: only whether one is set comes back).
   rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
   rpc SaveSettings(SaveSettingsRequest) returns (SaveSettingsResponse);
+
+  // The most recent prompts (newest first, repeats folded), kept in the server's activity log.
+  rpc ListPrompts(ListPromptsRequest) returns (ListPromptsResponse);
+
+  // Something a client saw that the server can't (e.g. the sheet crashed); written to the
+  // activity log.
+  rpc ReportClientEvent(ReportClientEventRequest) returns (ReportClientEventResponse);
 }
 
 // The shared spreadsheet: an append-only log of GridCraft engine commands. Every client replays
@@ -285,7 +292,39 @@ message LlmSettings {
   uint32 max_tool_rounds = 10;
   // Clears the stored key (then the environment variable is used).
   bool clear_api_key = 11;
+  // The agent's briefing: how the setup works and what each tool does; the start of every
+  // system prompt. Empty: the built-in default (so it follows new versions).
+  string briefing = 12;
+  // Read-only: the built-in briefing (for "reset to default").
+  string default_briefing = 13;
 }
+
+message ListPromptsRequest {
+  // At most this many (default 50, at most 500).
+  uint32 limit = 1;
+}
+
+message PromptEntry {
+  string prompt = 1;
+  int64 at_ms = 2;
+  string model = 3;
+  string scenario_id = 4;
+  string run_id = 5;
+}
+
+message ListPromptsResponse {
+  repeated PromptEntry prompts = 1;
+}
+
+message ReportClientEventRequest {
+  // e.g. "sheet.crashed", "sheet.stalled", "sheet.reloaded".
+  string kind = 1;
+  string message = 2;
+  // Anything else, as a JSON object.
+  string detail_json = 3;
+}
+
+message ReportClientEventResponse {}
 
 message GetSettingsRequest {}
 

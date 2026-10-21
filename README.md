@@ -12,6 +12,10 @@ agent and the server. The agent can:
   (sandboxed, fuel-limited), that call machine tools and write the results into the sheet every
   second.
 
+[![Demo video](https://img.youtube.com/vi/y1POBe1O9do/hqdefault.jpg)](https://www.youtube.com/watch?v=y1POBe1O9do)
+
+▶ [Watch the demo on YouTube](https://www.youtube.com/watch?v=y1POBe1O9do)
+
 Every step streams to the UI: thinking, answer text, plan, tool calls with input/output and
 timing, token usage. Runs replay losslessly after a reconnect. The scripted scenarios from the
 first version (approval, parallel sub-agents, error recovery) still work offline under **Runs**.
@@ -42,6 +46,54 @@ extra system prompt. They are stored in `.data/settings.json` (`--data` or `AGEN
 The key is write-only over the API. Without a stored key, the variable named in the settings
 (`MELIOUS_API_KEY` by default) is used; `./.env` is loaded at startup and is never baked into the
 container image (`apple-run` passes it with `--env-file`).
+
+## The agent's briefing
+
+Every system prompt starts with a briefing. It explains how the setup works and what each tool is
+for, and it adds a reference generated from GridCraft's own catalog:
+- every chart and sparkline command with its exact parameters,
+- every command the agent may run (with parameters for the main groups),
+- all worksheet functions by category.
+
+So the agent knows the exact names without having to look them up. It is about 38 KB (about 10k
+tokens), sent with every request. **Settings → Agent briefing** shows and edits it; **Reset to
+built-in** goes back to the generated one, which follows new GridCraft versions. Edits apply from
+the next message, including in the current chat.
+
+## Activity log and prompt history
+
+`.data/activity.jsonl` (in the `--data` directory) records what happened, one JSON object per
+line:
+- prompts,
+- every tool call with its arguments, output and timing,
+- answers with token counts, and how each run ended,
+- widget compiles, failures and stops,
+- browser edits to the sheet, and resets,
+- sheet crashes reported by browsers,
+- settings changes (never the key).
+
+It survives restarts. At 16 MB it moves to `activity.jsonl.1`. For example:
+
+```sh
+jq -c 'select(.kind=="tool_call") | {tool, is_error, ms}' .data/activity.jsonl
+jq -c 'select(.kind=="client")' .data/activity.jsonl     # sheet crashes and stalls
+```
+
+The chat's **History** button lists the recent prompts from this log, in every browser. **↑** in
+an empty prompt steps back through them.
+
+## When the sheet stops drawing
+
+The sheet (GridCraft in WebAssembly) stops for good if it panics, and the page can't always tell.
+So:
+- The sheet reports a panic to the page, naming the op from the log it was replaying.
+- The page pings the sheet every few seconds while it is on screen, and treats it as stalled after
+  15 s without an answer.
+- Either way the page reloads the sheet by itself, at most once a minute. The reload replays the
+  log without the op that crashed it.
+- The page then says what happened. **Reload sheet** and **Reload with WebGL** (useful if WebGPU
+  is the problem) are always in the sheet's footer.
+- Each event is written to the activity log.
 
 ## How the sheet stays in sync
 

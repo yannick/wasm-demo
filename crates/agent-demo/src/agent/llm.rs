@@ -38,34 +38,6 @@ const SCENARIOS: [(&str, &str, &str, &str); 2] = [
     ),
 ];
 
-const SYSTEM_PROMPT: &str = r#"You are the agent of a live demo. The user sees a spreadsheet (GridCraft, Excel-like, shared live between the user, you and the server) next to this chat, and can edit it too.
-
-Tools:
-- get_system_metrics, list_processes: live readings of the machine the server runs on.
-- sheet_*: read and change the workbook (write_range, set_cell, format_range, create_table, insert_chart, sort_range, execute_command for anything else; list_commands shows the command catalog). Every change shows up in the user's sheet immediately. Use A1 notation.
-- compile_wasm_widget: write a small WebAssembly program (WebAssembly text) that the server compiles and runs every interval; it reads metrics through imports and writes cells. This is how a sheet becomes live.
-- update_plan: show the user your plan for multi-step work and tick steps off as you go.
-
-How to work:
-- For anything with several steps, call update_plan first, then keep it current.
-- Lay out a sheet with one write_range (headers and labels), then format it (bold headers, number formats, column widths), then make values live with a widget instead of writing them once.
-- Rows and columns in the widget ABI are 1-based: A1 is (1, 1), B3 is (row 3, col 2).
-- If a compile fails, read the error, fix the WAT and compile again.
-- Answer in short Markdown. Say what you changed in the sheet (which cells).
-
-A minimal widget:
-(module
-  (import "tools" "cpu_percent" (func $cpu (result f64)))
-  (import "tools" "memory_percent" (func $mem (result f64)))
-  (import "sheet" "set_number" (func $num (param i32 i32 f64)))
-  (import "sheet" "set_text" (func $text (param i32 i32 i32 i32)))
-  (memory (export "memory") 1)
-  (data (i32.const 0) "live")
-  (func (export "init") (call $text (i32.const 1) (i32.const 3) (i32.const 0) (i32.const 4)))
-  (func (export "tick")
-    (call $num (i32.const 2) (i32.const 2) (call $cpu))
-    (call $num (i32.const 3) (i32.const 2) (call $mem))))"#;
-
 #[derive(Debug)]
 pub struct LlmAgent {
     settings: Arc<Settings>,
@@ -119,21 +91,25 @@ impl LlmAgent {
         }
     }
 
+    /// The conversation so far, under the current system prompt (an edited briefing applies to
+    /// the next turn of an ongoing chat too).
     fn history(&self, cfg: &LlmConfig, conversation_id: &str) -> Vec<Value> {
-        let history = self
+        let mut history = self
             .conversations
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(conversation_id);
-        if !history.is_empty() {
-            return history;
-        }
-        let mut system = SYSTEM_PROMPT.to_owned();
+        let mut system = cfg.briefing().to_owned();
         if !cfg.system_prompt.trim().is_empty() {
             system.push_str("\n\n");
             system.push_str(cfg.system_prompt.trim());
         }
-        vec![json!({ "role": "system", "content": system })]
+        let system = json!({ "role": "system", "content": system });
+        match history.first_mut() {
+            Some(first) if first["role"] == "system" => *first = system,
+            _ => history.insert(0, system),
+        }
+        history
     }
 }
 
@@ -206,6 +182,15 @@ impl Turn {
             let answer = self.complete(offer_tools).await?;
             let calls = answer.tool_calls.clone();
             if calls.is_empty() {
+                crate::activity::record(
+                    "answer",
+                    json!({
+                        "run_id": self.run.id(),
+                        "text": crate::activity::cut(&answer.text),
+                        "input_tokens": self.usage.input_tokens,
+                        "output_tokens": self.usage.output_tokens,
+                    }),
+                );
                 self.history.push(answer.to_message());
                 return Ok(());
             }
@@ -293,6 +278,17 @@ impl Turn {
                 })
         };
         let text = cut(&output.text, MAX_TOOL_OUTPUT);
+        crate::activity::record(
+            "tool_call",
+            json!({
+                "run_id": self.run.id(),
+                "tool": name,
+                "arguments": crate::activity::cut(arguments),
+                "output": crate::activity::cut(&text),
+                "is_error": output.is_error,
+                "ms": started.elapsed().as_millis(),
+            }),
+        );
         self.run.emit(
             "",
             Kind::ToolCallFinished(Box::new(pb::ToolCallFinished {

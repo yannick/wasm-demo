@@ -14,7 +14,12 @@
 //!   changes, like the user's own.
 //! - `sheet:changed` (to the page): `{ ops: [{ command, params }] }`, the commands the user (or a
 //!   `sheet:call`) ran since the last report, taken from the engine's replayable journal.
-//! - `sheet:failed` (to the page): `{ error }` when the sheet couldn't start.
+//! - `sheet:failed` (to the page): `{ error }` when the sheet couldn't start, or
+//!   `{ error, crashed: true, op }` when it panicked (it stops after a panic). `op` is
+//!   `{ seq, command }` of the remote op that was running, or null when the panic came later
+//!   (e.g. while drawing).
+//! - `sheet:ping` (from the page) `{ id }`: answered with `sheet:pong` `{ id }` at the next frame,
+//!   so the page can tell a sheet that stopped drawing from a busy one.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -26,6 +31,13 @@ use serde_json::{Value as Json, json};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::closure::Closure;
+
+thread_local! {
+    /// The bridge, for the panic hook (a hook must be `Send + Sync`, so it can't hold it).
+    static HOOKED: RefCell<Option<Bridge>> = const { RefCell::new(None) };
+    /// The remote op running right now (`seq`, command), so a panic can name it.
+    static APPLYING: RefCell<Option<(Json, String)>> = const { RefCell::new(None) };
+}
 
 #[derive(Clone)]
 pub struct Bridge {
@@ -57,6 +69,29 @@ impl Bridge {
 
     pub fn post_failed(&self, error: &str) {
         self.send("sheet:failed", &json!({ "error": error }));
+    }
+
+    /// Reports a panic to the page as `sheet:failed`. Call after the eframe runner installed its
+    /// own hook: that one runs first and stops the app.
+    pub fn report_panics(&self) {
+        HOOKED.with(|b| *b.borrow_mut() = Some(self.clone()));
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            previous(info);
+            let op = APPLYING.with(|a| a.try_borrow().ok().and_then(|a| a.clone()));
+            let body = json!({
+                "error": format!("the sheet crashed: {info}"),
+                "crashed": true,
+                "op": op.map(|(seq, command)| json!({ "seq": seq, "command": command })),
+            });
+            HOOKED.with(|b| {
+                if let Ok(b) = b.try_borrow()
+                    && let Some(bridge) = b.as_ref()
+                {
+                    bridge.send("sheet:failed", &body);
+                }
+            });
+        }));
     }
 
     /// Queues the page's messages and wakes egui to handle them.
@@ -95,6 +130,9 @@ impl Bridge {
             match message["type"].as_str() {
                 Some("sheet:apply") => self.apply(app, ctx, body),
                 Some("sheet:call") => self.call(app, ctx, body),
+                Some("sheet:ping") => {
+                    self.send("sheet:pong", &json!({ "id": body["id"] }));
+                }
                 other => log::warn!("unknown message {other:?}"),
             }
         }
@@ -107,7 +145,10 @@ impl Bridge {
         for op in body["ops"].as_array().map(Vec::as_slice).unwrap_or_default() {
             let Some(command) = op["command"].as_str() else { continue };
             let params = json!({ "command": command, "params": op.get("params").cloned().unwrap_or(json!({})) });
-            if let Outcome::Done(res) = handle(app, ctx, "engine.execute", &params)
+            APPLYING.with(|a| *a.borrow_mut() = Some((op["seq"].clone(), command.to_owned())));
+            let outcome = handle(app, ctx, "engine.execute", &params);
+            APPLYING.with(|a| *a.borrow_mut() = None);
+            if let Outcome::Done(res) = outcome
                 && res["ok"] == json!(false)
             {
                 log::warn!("remote {command} failed: {}", res["error"]);

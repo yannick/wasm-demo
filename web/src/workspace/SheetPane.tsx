@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Badge, Button, Dialog, Panel } from "../design/index.js";
-import { SHEET_URL, type Sheet } from "../sheet/useSheet.js";
+import type { Sheet } from "../sheet/useSheet.js";
 
 function originLabel(origin: string): string {
   if (origin === "agent") return "agent";
@@ -16,6 +16,37 @@ function SyncBadge({ sheet }: { sheet: Sheet }) {
   if (sheet.status === "failed") return <Badge tone="critical">Failed</Badge>;
   if (sheet.status === "loading") return <Badge tone="muted">Loading</Badge>;
   return sheet.connected ? <Badge tone="success">Live</Badge> : <Badge tone="warning">Reconnecting</Badge>;
+}
+
+function crashText(sheet: Sheet): string {
+  const op = sheet.crash?.op;
+  const what = sheet.crash?.stalled ? "The sheet stopped responding" : "The sheet crashed";
+  return op ? `${what} while replaying ${op.command} (op #${op.seq}); reloads leave that op out.` : `${what}.`;
+}
+
+function noticeText(sheet: Sheet, down: boolean): string {
+  if (!sheet.crash) return `The spreadsheet could not start: ${sheet.error}`;
+  if (!down) return `${crashText(sheet)} It reloaded itself.`;
+  return sheet.crash.recovered ? `${crashText(sheet)} Reloading…` : crashText(sheet);
+}
+
+/** Why the sheet is down, or that it came back by itself; with the ways to bring it back. */
+function CrashNotice({ sheet }: { sheet: Sheet }) {
+  const down = sheet.status === "failed";
+  if (!down && !sheet.crash) return null;
+  return (
+    <div className={down ? "sheet-crash sheet-crash--down" : "sheet-crash"} role={down ? "alert" : "status"}>
+      <span>{noticeText(sheet, down)}</span>
+      {sheet.crash && <span className="muted sheet-crash__detail" title={sheet.crash.error}>{sheet.crash.error}</span>}
+      <span className="sheet-crash__actions">
+        <Button size="sm" onClick={() => sheet.reload()}>Reload sheet</Button>
+        <Button size="sm" variant="ghost" onClick={() => sheet.reload({ webgl: !sheet.webgl })}>
+          Reload with {sheet.webgl ? "the auto renderer" : "WebGL"}
+        </Button>
+        {!down && <Button size="sm" variant="ghost" onClick={sheet.dismissCrash}>Dismiss</Button>}
+      </span>
+    </div>
+  );
 }
 
 export interface SheetPaneProps {
@@ -59,8 +90,8 @@ export function SheetPane({ sheet, onUndock, onDock, minimize, grip, height, hid
       hidden={hidden}
       aside={<Aside sheet={sheet} onUndock={onUndock} onDock={onDock} minimize={minimize} />}
     >
-      <iframe key={sheet.frameKey} ref={sheet.frameRef} className="sheet-frame" src={SHEET_URL} title="Spreadsheet (GridCraft)" />
-      {sheet.status === "failed" && <p className="error">The spreadsheet could not start: {sheet.error}</p>}
+      <CrashNotice sheet={sheet} />
+      <iframe key={sheet.frameKey} ref={sheet.frameRef} className="sheet-frame" src={sheet.frameUrl} title="Spreadsheet (GridCraft)" />
       <footer className="sheet-pane__footer">
         <span className="muted">
           {stats.seen} ops from the server · {stats.sent} sent
@@ -69,6 +100,11 @@ export function SheetPane({ sheet, onUndock, onDock, minimize, grip, height, hid
         {stats.rejected.length > 0 && (
           <span className="error" title={stats.rejected.join("\n")}>{stats.rejected.length} refused by the server</span>
         )}
+        {(stats.skipped ?? 0) > 0 && <span className="error">{stats.skipped} left out (crashed the sheet)</span>}
+        <span className="muted sheet-pane__renderer" title="How the sheet draws: WebGPU where the browser allows it (secure pages), else WebGL">
+          {sheet.webgl ? "WebGL (forced)" : "auto renderer"}
+        </span>
+        <Button size="sm" variant="ghost" title="A fresh sheet, replayed from the server" onClick={() => sheet.reload()}>Reload</Button>
         <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>Clear sheet</Button>
       </footer>
       <Dialog

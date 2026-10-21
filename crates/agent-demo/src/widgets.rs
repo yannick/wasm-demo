@@ -113,6 +113,27 @@ impl Widgets {
         wat: &str,
         interval_ms: u32,
     ) -> Result<pb::Widget, WidgetError> {
+        let result = self.start(name, description, wat, interval_ms);
+        crate::activity::record(
+            "widget",
+            serde_json::json!({
+                "name": name,
+                "event": if result.is_ok() { "compiled" } else { "compile_failed" },
+                "interval_ms": interval_ms,
+                "error": result.as_ref().err().map(ToString::to_string),
+                "wat": crate::activity::cut(wat),
+            }),
+        );
+        result
+    }
+
+    fn start(
+        self: &Arc<Self>,
+        name: &str,
+        description: &str,
+        wat: &str,
+        interval_ms: u32,
+    ) -> Result<pb::Widget, WidgetError> {
         let name = name.trim();
         if name.is_empty()
             || name.len() > 64
@@ -191,6 +212,10 @@ impl Widgets {
             return false;
         };
         entry.stop.cancel();
+        crate::activity::record(
+            "widget",
+            serde_json::json!({ "name": name, "event": if remove { "removed" } else { "stopped" } }),
+        );
         if remove {
             let entry = entries.remove(name).expect("present");
             drop(entries);
@@ -257,6 +282,10 @@ impl Widgets {
             self.publish(&widget, false);
             if let Err(error) = result {
                 tracing::warn!(widget = %runner.name, %error, "widget failed");
+                crate::activity::record(
+                    "widget",
+                    serde_json::json!({ "name": runner.name, "event": "failed", "error": error }),
+                );
                 return;
             }
         }

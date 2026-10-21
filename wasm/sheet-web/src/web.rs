@@ -31,7 +31,12 @@ pub fn start() {
         }
         let bridge = Bridge::new();
         let app_bridge = bridge.clone();
-        let result = eframe::WebRunner::new()
+        // The runner installs its panic handler (which stops the app); ours then tells the page.
+        let runner = eframe::WebRunner::new();
+        if let Some(bridge) = &bridge {
+            bridge.report_panics();
+        }
+        let result = runner
             .start(
                 canvas,
                 options,

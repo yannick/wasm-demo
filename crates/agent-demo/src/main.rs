@@ -4,8 +4,10 @@
 //! (WebAssembly, embedded), and the Connect API (`/agentdemo.v1.*`, binary protobuf) that the
 //! islands stream from.
 
+mod activity;
 mod agent;
 mod api;
+mod briefing;
 mod llm;
 mod machine;
 mod run;
@@ -127,8 +129,15 @@ fn state(settings: Settings, machine: Machine, speed: f64) -> State {
     }
 }
 
+fn open_activity_log(data: &std::path::Path) {
+    let log = activity::ActivityLog::open(data);
+    tracing::info!(path = %log.path().display(), "activity log");
+    activity::init(log);
+}
+
 async fn serve(opts: Options) -> anyhow::Result<()> {
     let settings = Settings::load(&opts.data);
+    open_activity_log(&opts.data);
     let llm = settings.llm();
     tracing::info!(
         data = %opts.data.display(),

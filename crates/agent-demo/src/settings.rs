@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
 use agent_demo_proto::agentdemo::v1 as pb;
+
+use crate::briefing::default_briefing;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.melious.ai";
@@ -37,6 +39,8 @@ pub struct LlmConfig {
     pub max_tokens: u32,
     pub system_prompt: String,
     pub max_tool_rounds: u32,
+    /// Replaces the built-in briefing; empty means the built-in one.
+    pub briefing: String,
 }
 
 impl Default for LlmConfig {
@@ -51,6 +55,7 @@ impl Default for LlmConfig {
             max_tokens: 16_384,
             system_prompt: String::new(),
             max_tool_rounds: 16,
+            briefing: String::new(),
         }
     }
 }
@@ -66,6 +71,15 @@ impl LlmConfig {
             .filter(|k| !k.trim().is_empty())
     }
 
+    /// The briefing that starts the system prompt.
+    pub fn briefing(&self) -> &str {
+        if self.briefing.trim().is_empty() {
+            default_briefing()
+        } else {
+            &self.briefing
+        }
+    }
+
     /// The settings as the UI sees them (no key).
     pub fn to_proto(&self) -> pb::LlmSettings {
         pb::LlmSettings {
@@ -78,6 +92,8 @@ impl LlmConfig {
             max_tokens: self.max_tokens,
             system_prompt: self.system_prompt.clone(),
             max_tool_rounds: self.max_tool_rounds,
+            briefing: self.briefing().to_owned(),
+            default_briefing: default_briefing().to_owned(),
             ..Default::default()
         }
     }
@@ -123,6 +139,12 @@ impl LlmConfig {
         self.max_tokens = s.max_tokens.clamp(256, 65_536);
         self.system_prompt.clone_from(&s.system_prompt);
         self.max_tool_rounds = s.max_tool_rounds.clamp(1, 64);
+        // The default is stored as "none", so the built-in one keeps following new versions.
+        self.briefing = if s.briefing.trim() == default_briefing().trim() {
+            String::new()
+        } else {
+            s.briefing.trim().to_owned()
+        };
         Ok(())
     }
 }

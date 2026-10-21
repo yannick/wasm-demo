@@ -58,4 +58,14 @@ describe("SheetSync", () => {
     expect(sent.map((ops) => (ops[0]?.params as { cell: string }).cell)).toEqual(["A1", "A2"]);
     expect(sync.stats.sent).toBe(2);
   });
+
+  it("leaves out ops that crashed the sheet and names the others by seq", () => {
+    const applied: FrameOp[][] = [];
+    const sync = new SheetSync({ apply: (ops) => applied.push(ops), reload: () => {} }, async () => [], () => {}, "me", new Set(["1"]));
+    sync.frameReady();
+    sync.receive(create(WatchSheetResponseSchema, { ops: [op(0, "agent"), op(1, "agent", "B1"), op(2, "agent", "C1")], logId: "L1" }));
+    expect(applied[0]?.map((o) => o.seq)).toEqual(["0", "2"]);
+    expect(sync.stats.skipped).toBe(1);
+    expect(sync.cursor).toBe(3n);
+  });
 });

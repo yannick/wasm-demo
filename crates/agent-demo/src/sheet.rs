@@ -72,7 +72,7 @@ const ALLOWED: &[&str] = &[
 /// Compact when the log grows past this many ops.
 const COMPACT_AT: usize = 4_096;
 
-fn denied(command: &str) -> bool {
+pub fn denied(command: &str) -> bool {
     !ALLOWED.contains(&command) && DENIED_PREFIXES.iter().any(|p| command.starts_with(p))
 }
 

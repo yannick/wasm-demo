@@ -4,10 +4,13 @@
 // applied; the frame does not report them back. Local ops (the user editing the sheet) go to
 // ApplySheetOps in order, and come back in the log with this client's origin, so they are
 // skipped there. A `reset` (the sheet was cleared, or the server restarted) reloads the frame.
+// Ops listed in `skip` (by seq) are never applied: one crashed the sheet, so the replay after a
+// reload leaves it out.
 import type { WatchSheetResponse } from "../gen/agentdemo/v1/agent_pb.js";
 
-/** An engine command as the frame takes it. */
+/** An engine command as the frame takes it; `seq` (from the server's log) names it in a crash. */
 export interface FrameOp {
+  seq?: string;
   command: string;
   params: unknown;
 }
@@ -27,6 +30,8 @@ export interface SyncStats {
   rejected: string[];
   /** Origin of the last remote op, e.g. "agent" or "widget:cpu". */
   lastOrigin: string;
+  /** Ops left out because they crashed the sheet. */
+  skipped?: number;
 }
 
 export class SheetSync {
@@ -44,6 +49,7 @@ export class SheetSync {
     private readonly send: (ops: FrameOp[]) => Promise<string[]>,
     private readonly onStats: (stats: SyncStats) => void = () => {},
     clientId?: string,
+    private readonly skip: ReadonlySet<string> = new Set(),
   ) {
     this.clientId = clientId ?? `tab-${Math.random().toString(36).slice(2, 10)}`;
   }
@@ -61,7 +67,12 @@ export class SheetSync {
     for (const op of batch.ops) {
       this.cursor = op.seq + 1n;
       if (op.origin === own) continue;
-      this.pending.push({ command: op.command, params: parse(op.paramsJson) });
+      const seq = op.seq.toString();
+      if (this.skip.has(seq)) {
+        this.stats.skipped = (this.stats.skipped ?? 0) + 1;
+        continue;
+      }
+      this.pending.push({ seq, command: op.command, params: parse(op.paramsJson) });
       this.stats.lastOrigin = op.origin;
     }
     this.stats = { ...this.stats, seen: this.stats.seen + batch.ops.length };
