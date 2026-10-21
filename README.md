@@ -88,8 +88,16 @@ widget runs on the server.
 
 ## Using the workspace
 
-- **Resize:** drag the bars between chat, sheet and side panel, or focus one and use the arrow
-  keys. The widths are remembered per browser.
+- **Panels bar:** the bar above the workspace lists Chat, Sheet, Machine and Wasm widgets. The
+  **–** in a panel's header minimizes it into the bar, and the other panels take its space. The
+  panel's button in the bar (or **Show all**) brings it back. Minimized panels keep running: the
+  chat keeps streaming and the sheet keeps syncing.
+- **Resize:** drag the bars between the columns, or focus one and use the arrow keys.
+  - The sheet's **corner grip** sets its width and height together, taking width from the side
+    panel. With nothing to its right, the grip sets only the height. A double click on the grip
+    resets the sheet to fill its column.
+  - The chat takes whatever width is left.
+  - Sizes and minimized panels are remembered per browser.
 - **Undock ↗:** moves the sheet into a window of its own, so the chat gets the width. That
   window syncs with the server on its own. **Snapshot → sheet** still writes into it, over a
   `BroadcastChannel`. Closing the window, or **Dock**, brings the sheet back.

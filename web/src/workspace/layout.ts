@@ -1,4 +1,4 @@
-// Layout helpers: widths the user dragged (kept per browser), media queries.
+// Layout helpers: the workspace columns, sizes the user dragged (kept per browser), media queries.
 import { useCallback, useEffect, useState } from "react";
 
 function read(key: string, fallback: number): number {
@@ -75,4 +75,20 @@ export function useHeightBelow(ref: React.RefObject<HTMLElement | null>, margin:
     return () => window.removeEventListener("resize", measure);
   }, [ref, margin]);
   return height;
+}
+
+/** Which workspace columns are on screen. */
+export interface Shown {
+  chat: boolean;
+  sheet: boolean;
+  side: boolean;
+}
+
+/** Grid tracks of the visible columns, with an `auto` track for each splitter between them. */
+export function template(shown: Shown, sheetWidth: number, sideWidth: number): string {
+  const tracks: string[] = [];
+  if (shown.chat) tracks.push("minmax(400px, 1fr)");
+  if (shown.sheet) tracks.push(shown.chat ? `minmax(360px, ${sheetWidth}px)` : "minmax(360px, 1fr)");
+  if (shown.side) tracks.push(shown.chat || shown.sheet ? `${sideWidth}px` : "minmax(260px, 1fr)");
+  return tracks.join(" auto ");
 }

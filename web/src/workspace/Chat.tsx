@@ -1,6 +1,7 @@
 // The chat: one conversation of runs (each turn is a run of the "chat" scenario, so it streams
 // and replays like any other), a composer with a model picker, presets and the settings.
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { Badge, Button, Panel } from "../design/index.js";
 import { agentClient, type RunSummary } from "../api/client.js";
@@ -115,7 +116,8 @@ function useFollow(ref: React.RefObject<HTMLElement | null>, on: boolean): void 
   }, [ref, on]);
 }
 
-export function Chat() {
+/** `minimize` is the header button that folds the chat into the app bar. */
+export function Chat({ hidden, minimize }: { hidden?: boolean; minimize?: ReactNode }) {
   const [conversationId, setConversationId] = useState(storedConversation);
   const [editing, setEditing] = useState(false);
   const { settings, saved } = useSettings();
@@ -143,10 +145,11 @@ export function Chat() {
       </label>
       <Button size="sm" variant="ghost" onClick={() => setConversationId(newConversation())}>New chat</Button>
       <Button size="sm" variant="ghost" disabled={!settings} onClick={() => setEditing(true)}>Settings</Button>
+      {minimize}
     </span>
   );
   return (
-    <Panel title="Chat" className="chat" aside={aside}>
+    <Panel title="Chat" className="chat" aside={aside} hidden={hidden}>
       <ol className="turns" ref={scroller}>
         {turns.length === 0 && (
           <li className="muted">

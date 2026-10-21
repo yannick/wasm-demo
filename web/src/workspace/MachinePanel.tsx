@@ -1,6 +1,7 @@
 // Live readings of the server's machine, and a button that writes a snapshot into the sheet
 // from the browser (through the sheet frame, so it syncs like a user's edit).
 import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { Badge, Button, DataList, Meter, Panel, Readout, type Tone } from "../design/index.js";
 import type { MachineMetrics } from "../gen/agentdemo/v1/agent_pb.js";
@@ -74,15 +75,24 @@ function Cores({ metrics }: { metrics: MachineMetrics }) {
   );
 }
 
-export function MachinePanel({ sheet }: { sheet: SheetCaller }) {
+export function MachinePanel({ sheet, hidden, minimize }: { sheet: SheetCaller; hidden?: boolean; minimize?: ReactNode }) {
   const { metrics, connected } = useMetrics();
   if (!metrics) {
-    return <Panel title="Machine"><p className="muted">Waiting for the first sample…</p></Panel>;
+    return <Panel title="Machine" hidden={hidden} aside={minimize}><p className="muted">Waiting for the first sample…</p></Panel>;
   }
   const mem = pct(metrics.memoryUsedBytes, metrics.memoryTotalBytes);
   const disk = pct(metrics.diskUsedBytes, metrics.diskTotalBytes);
   return (
-    <Panel title="Machine" aside={connected ? <Badge tone="success">1 s</Badge> : <Badge tone="warning">offline</Badge>}>
+    <Panel
+      title="Machine"
+      hidden={hidden}
+      aside={
+        <span className="panel-aside">
+          {connected ? <Badge tone="success">1 s</Badge> : <Badge tone="warning">offline</Badge>}
+          {minimize}
+        </span>
+      }
+    >
       <p className="muted machine__host">{metrics.host} · {metrics.os}</p>
       <div className="machine__readouts">
         <Readout size="sm" label="CPU" value={metrics.cpuPercent.toFixed(0)} unit="%" />

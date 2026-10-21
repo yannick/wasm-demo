@@ -222,6 +222,53 @@ main.console-main {
   height: 100%;
   box-sizing: border-box;
 }
+.workspace__empty { padding: var(--sd-space-5); }
+
+/* App bar: a button per panel above the workspace; minimized panels wait here (AppBar.tsx). */
+.workspace-shell { display: grid; gap: var(--sd-space-3); }
+.appbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sd-space-2) var(--sd-space-3);
+  padding: var(--sd-space-1) var(--sd-space-2);
+  border: var(--sd-border) solid var(--sd-color-line-faint);
+  background: color-mix(in srgb, var(--sd-color-surface-sunken) 70%, transparent);
+}
+.appbar__title {
+  font-size: var(--sd-font-size-xs);
+  letter-spacing: var(--sd-tracking-wide);
+  text-transform: uppercase;
+  color: var(--sd-color-text-muted);
+}
+.appbar__items { display: flex; flex-wrap: wrap; gap: var(--sd-space-2); margin: 0; padding: 0; list-style: none; }
+.appbar__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sd-space-2);
+  padding: var(--sd-space-1) var(--sd-space-3);
+  border: var(--sd-border) solid var(--sd-color-line);
+  background: var(--sd-color-accent-faint);
+  color: var(--sd-color-text);
+  font: inherit;
+  font-size: var(--sd-font-size-xs);
+  letter-spacing: var(--sd-tracking-wide);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color var(--sd-dur-fast), color var(--sd-dur-fast);
+}
+.appbar__item:hover,
+.appbar__item:focus-visible { border-color: var(--sd-color-accent); color: var(--sd-color-accent); outline: none; }
+.appbar__dot { width: 0.5em; height: 0.5em; background: var(--sd-color-accent); }
+/* Minimized (or undocked): outlined, its dot hollow, so it reads as "click to bring back". */
+.appbar__item--away { background: transparent; color: var(--sd-color-text-muted); border-style: dashed; }
+.appbar__item--away .appbar__dot { background: transparent; box-shadow: inset 0 0 0 var(--sd-border) currentColor; }
+.appbar__error { font-size: var(--sd-font-size-xs); }
+.appbar__restore { margin-left: auto; }
+
+.panel-aside { display: inline-flex; align-items: center; gap: var(--sd-space-2); }
+.minimize { min-width: 2em; justify-content: center; }
+
 /* While a splitter is dragged, the sheet frame must not swallow the pointer. */
 .is-resizing { cursor: col-resize; user-select: none; }
 .is-resizing iframe { pointer-events: none; }
@@ -251,7 +298,30 @@ main.console-main {
 .splitter:focus-visible { outline: none; }
 
 /* Sheet */
-.sheet-pane { min-width: 0; }
+.sheet-pane { min-width: 0; position: relative; }
+/* A height the user dragged: the frame fills it; in columns it never outgrows the column. */
+.sheet-pane--sized { display: flex; flex-direction: column; box-sizing: border-box; }
+.workspace--columns .sheet-pane--sized { align-self: start; max-height: 100%; }
+.sheet-pane--sized .sheet-frame { flex: 1 1 auto; height: auto; min-height: 0; }
+.resize-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  /* Three diagonal ridges in the corner. */
+  background: linear-gradient(135deg, transparent 0 55%, var(--sd-color-line) 55% 62%, transparent 62% 70%,
+      var(--sd-color-line) 70% 77%, transparent 77% 85%, var(--sd-color-line) 85% 92%, transparent 92%);
+}
+.resize-grip:hover,
+.resize-grip:focus-visible,
+.is-resizing .resize-grip {
+  outline: none;
+  background: linear-gradient(135deg, transparent 0 55%, var(--sd-color-accent) 55% 62%, transparent 62% 70%,
+      var(--sd-color-accent) 70% 77%, transparent 77% 85%, var(--sd-color-accent) 85% 92%, transparent 92%);
+}
 .sheet-pane__aside { display: flex; align-items: center; gap: var(--sd-space-2); }
 .sheet-frame {
   display: block;
@@ -272,15 +342,6 @@ main.console-main {
   font-size: var(--sd-font-size-xs);
 }
 .sheet-pane__footer > :last-child { margin-left: auto; }
-.undocked-note {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sd-space-3);
-  padding: var(--sd-space-3);
-  background: var(--sd-color-accent-faint);
-  font-size: var(--sd-font-size-sm);
-}
 
 /* The undocked sheet window: the sheet fills it. */
 body.is-sheet-window header.hud { display: none; }
@@ -290,7 +351,7 @@ body.is-sheet-window main { padding: var(--sd-space-2); }
 
 /* Chat */
 .chat { min-width: 0; }
-.chat__aside { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sd-space-2); }
+.chat__aside { display: flex; align-items: center; gap: var(--sd-space-2); white-space: nowrap; }
 .chat__follow {
   display: flex;
   align-items: center;

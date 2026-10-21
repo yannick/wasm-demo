@@ -1,6 +1,7 @@
 // WebAssembly widgets: what the agent (or you) compiled, live state, source and log, controls,
 // and a box to compile your own.
 import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { Badge, Button, Disclosure, Panel, type Tone } from "../design/index.js";
 import { machineClient } from "../api/client.js";
@@ -89,11 +90,20 @@ function Compiler() {
   );
 }
 
-export function WidgetsPanel() {
+export function WidgetsPanel({ hidden, minimize }: { hidden?: boolean; minimize?: ReactNode }) {
   const widgets = useWidgets();
   const running = widgets.filter((w) => w.state === WidgetState.RUNNING).length;
   return (
-    <Panel title="Wasm widgets" aside={`${running} running`}>
+    <Panel
+      title="Wasm widgets"
+      hidden={hidden}
+      aside={
+        <span className="panel-aside">
+          {running} running
+          {minimize}
+        </span>
+      }
+    >
       {widgets.length === 0 && (
         <p className="muted">None yet. Ask the agent for a live sheet, e.g. “keep B2 at the current CPU load”.</p>
       )}
